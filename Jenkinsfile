@@ -5,7 +5,7 @@ pipeline {
             agent {
                 docker {
                     image 'python:3.14-rc-slim'
-                    reuse true
+                
                 }
             }
             steps {
