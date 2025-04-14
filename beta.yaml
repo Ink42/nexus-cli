@@ -1,0 +1,13 @@
+name: cli-engine
+
+module_path: 
+  modules
+
+module_mains:
+  - greet : main
+  - get : download
+
+multi-line-string:
+  This is a multi-line String
+
+
