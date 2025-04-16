@@ -54,9 +54,7 @@ Create a new Python file in the modules directory. You'll need to import from th
 
 Example plugin (modules/echo.py):
 
-->  View the defult echo plugin in the module directory 
-
-
+>  View the defult echo plugin in the module directory 
 
 Run a plugin command:
 
