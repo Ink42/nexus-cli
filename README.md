@@ -35,28 +35,26 @@ Originally conceived while modding Project Zomboid and exploring Lua, this proje
 
 ## Usage
 
-### Basic Usage
-
-```bash
-python minicli.py <command> [arguments]
+Paste this on your terminal :
 ```
+python minicli.py echo "Hello again!"
+```
+Expected output :
+```
+> [minicli] Routing to: echo
+> [echo plugin] Hello again!
+````
 
 ## Creating Plugins
-Create a new Python file in the modules directory. Define two required components:
+
+Create a new Python file in the modules directory. You'll need to import from the Plugin class from the plaugin_base and implement both the two required components:
 
 - SUBSCRIBE: The command name (string)
 - handle(args): The function that processes command arguments
 
 Example plugin (modules/echo.py):
 
-
-```
-SUBSCRIBE = "echo"
-
-def handle(args):
-    print(f"[echo plugin] {args}")
-```
-
+>  View the defult echo plugin in the module directory 
 
 Run a plugin command:
 
