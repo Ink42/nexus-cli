@@ -27,10 +27,10 @@ Originally conceived while modding Project Zomboid and exploring Lua, this proje
 
 2.  **Ensure you have Python 3.6+ installed.**
 
-3.  **Install required dependencies:**
+3.  **install the requirements:**
 
     ```bash
-    pip install pyyaml
+    pip install -r requirements.txt
     ```
 
 ## Usage
