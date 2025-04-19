@@ -177,3 +177,6 @@ class TestPlugin(Plugin):
     main()
     captured = capsys.readouterr()
     assert "test: Test plugin" in captured.out
+
+
+## Ignore just wanna check see the workflow pass
