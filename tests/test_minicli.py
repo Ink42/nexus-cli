@@ -1,65 +1,179 @@
-import unittest
-from unittest.mock import patch, mock_open, MagicMock
-import importlib.util
 import sys
-import os
-from io import StringIO
+import pytest
+from unittest.mock import patch
+import argparse
+
+from minicli import load_plugins, show_help, scaffold_plugin, main
+
+@pytest.fixture
+def plugin_env(tmpdir, monkeypatch):
+    plugin_base = tmpdir.join("plugin_base.py")
+    plugin_base.write("class Plugin: pass")
+    modules_dir = tmpdir.mkdir("modules")
+    monkeypatch.syspath_prepend(str(tmpdir))
+    monkeypatch.setattr('minicli.MODULES_DIR', str(modules_dir))
+    return modules_dir
+
+def test_load_plugins_no_plugins(plugin_env):
+    plugins = load_plugins()
+    assert plugins == {}
+
+def test_load_plugins_single_plugin(plugin_env):
+    test_plugin = plugin_env.join("test.py")
+    test_plugin.write('''
+from plugin_base import Plugin
+
+class TestPlugin(Plugin):
+    SUBSCRIBE = "test"
+    DESCRIPTION = "Test plugin"
+
+    def get_parser(self):
+        return None
+
+    def handle(self, args):
+        pass
+''')
+    plugins = load_plugins()
+    assert "test" in plugins
+    assert plugins["test"].DESCRIPTION == "Test plugin"
+
+def test_load_plugins_skips_base_class(plugin_env):
+    test_plugin = plugin_env.join("test.py")
+    test_plugin.write('''
+from plugin_base import Plugin
+
+Plugin.SUBSCRIBE = "base"
+Plugin.DESCRIPTION = "Base plugin"
+''')
+    plugins = load_plugins()
+    assert "base" not in plugins
+
+def test_scaffold_plugin_creates_file(plugin_env):
+    scaffold_plugin("test")
+    expected_file = plugin_env.join("test.py")
+    assert expected_file.exists()
+    content = expected_file.read()
+    assert "class TestPlugin(Plugin):" in content
+    assert 'SUBSCRIBE = "test"' in content
+
+def test_scaffold_plugin_existing_file(plugin_env, capsys):
+    existing_file = plugin_env.join("test.py")
+    existing_file.write("existing content")
+    scaffold_plugin("test")
+    captured = capsys.readouterr()
+    assert "[scaffold] Plugin 'test' already exists." in captured.out
+    assert existing_file.read() == "existing content"
 
 
-import minicli
 
-class TestMinicli(unittest.TestCase):
-    def setUp(self):
-        self.original_argv = sys.argv
-        self.original_modules_dir = minicli.MODULES_DIR
-        self.original_stdout = sys.stdout
-        sys.stdout = StringIO()
+def test_main_no_arguments(capsys, monkeypatch):
+    monkeypatch.setattr(sys, 'argv', ['minicli'])
+    main()
+    captured = capsys.readouterr()
+    assert "Available commands:" in captured.out
 
-    def tearDown(self):
-        sys.argv = self.original_argv
-        minicli.MODULES_DIR = self.original_modules_dir
-        sys.stdout = self.original_stdout
+def test_main_scaffold_command(plugin_env, capsys, monkeypatch):
+    monkeypatch.setattr(sys, 'argv', ['minicli', 'scaffold', 'newplugin'])
+    main()
+    captured = capsys.readouterr()
+    assert "[scaffold] Created plugin: modules/newplugin.py" in captured.out
+    assert plugin_env.join("newplugin.py").exists()
 
-    @patch('os.listdir')
-    @patch('importlib.util.spec_from_file_location')
-    @patch('importlib.util.module_from_spec')
-    def test_load_plugins(self, mock_module_from_spec, mock_spec_from_file, mock_listdir):
-        mock_listdir.return_value = ['echo.py', 'test.py', 'invalid.txt']
-        minicli.MODULES_DIR = 'mocked_modules'
-        
-     
-        mock_echo_module = MagicMock()
-        mock_echo_module.SUBSCRIBE = "echo"
-        mock_echo_module.handle = MagicMock()
-        
+def test_main_scaffold_missing_name(capsys, monkeypatch):
+    monkeypatch.setattr(sys, 'argv', ['minicli', 'scaffold'])
+    main()
+    captured = capsys.readouterr()
+    assert "Usage: minicli scaffold <plugin_name>" in captured.out
 
-        mock_test_module = MagicMock()
-        mock_test_module.SUBSCRIBE = None
-        mock_test_module.handle = MagicMock()
-        
-    
-        mock_spec_from_file.side_effect = [
-            MagicMock(loader=MagicMock()),  
-            MagicMock(loader=MagicMock()),   
-        ]
-        mock_module_from_spec.side_effect = [mock_echo_module, mock_test_module]
-        
-      
-        plugins = minicli.load_plugins()
-        
+def test_main_unknown_command(capsys, monkeypatch):
+    monkeypatch.setattr(sys, 'argv', ['minicli', 'unknown'])
+    # Mock load_plugins to return no plugins
+    with patch('minicli.load_plugins', return_value={}):
+        main()
+    captured = capsys.readouterr()
+    assert "[minicli] Unknown command: unknown" in captured.out
 
-        self.assertEqual(len(plugins), 1)
-        self.assertIn("echo", plugins)
-        self.assertEqual(plugins["echo"], mock_echo_module.handle)
+def test_main_plugin_command(plugin_env, capsys, monkeypatch):
+    plugin_env.join("test.py").write('''
+from plugin_base import Plugin
 
-    @patch('minicli.load_plugins')
-    def test_main_with_valid_command(self, mock_load_plugins):
-        
-        sys.argv = ['minicli', 'echo', 'test argument']
-        mock_load_plugins.return_value = {'echo': MagicMock()}
-        minicli.main()
-        output = sys.stdout.getvalue()
-        self.assertIn("[minicli] Routing to: echo", output)
+class TestPlugin(Plugin):
+    SUBSCRIBE = "test"
+    DESCRIPTION = "Test plugin"
 
-if __name__ == '__main__':
-    unittest.main()
+    def get_parser(self):
+        return None
+
+    def handle(self, args):
+        print("Handled:", args)
+''')
+    monkeypatch.setattr(sys, 'argv', ['minicli', 'test', 'arg1'])
+    main()
+    captured = capsys.readouterr()
+    assert "Handled: arg1" in captured.out
+
+def test_main_plugin_with_parser(plugin_env, capsys, monkeypatch):
+    plugin_env.join("test.py").write('''
+from plugin_base import Plugin
+import argparse
+
+class TestPlugin(Plugin):
+    SUBSCRIBE = "test"
+    DESCRIPTION = "Test plugin"
+
+    def get_parser(self):
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--option')
+        return parser
+
+    def handle(self, args):
+        print(f"Option: {args.option}")
+''')
+    monkeypatch.setattr(sys, 'argv', ['minicli', 'test', '--option', 'value'])
+    main()
+    captured = capsys.readouterr()
+    assert "Option: value" in captured.out
+
+def test_main_plugin_help(plugin_env, capsys, monkeypatch):
+    plugin_env.join("test.py").write('''
+from plugin_base import Plugin
+import argparse
+
+class TestPlugin(Plugin):
+    SUBSCRIBE = "test"
+    DESCRIPTION = "Test plugin"
+
+    def get_parser(self):
+        parser = argparse.ArgumentParser(prog='minicli test')
+        parser.add_argument('--option', help='an option')
+        return parser
+
+    def handle(self, args):
+        pass
+''')
+    monkeypatch.setattr(sys, 'argv', ['minicli', 'test', '--help'])
+    try:
+        main()
+    except SystemExit:
+        pass
+    captured = capsys.readouterr()
+    assert "usage: minicli test" in captured.out
+
+def test_main_plugin_no_parser_help(plugin_env, capsys, monkeypatch):
+    plugin_env.join("test.py").write('''
+from plugin_base import Plugin
+
+class TestPlugin(Plugin):
+    SUBSCRIBE = "test"
+    DESCRIPTION = "Test plugin"
+
+    def get_parser(self):
+        return None
+
+    def handle(self, args):
+        pass
+''')
+    monkeypatch.setattr(sys, 'argv', ['minicli', 'test', '--help'])
+    main()
+    captured = capsys.readouterr()
+    assert "test: Test plugin" in captured.out
